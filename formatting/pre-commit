@@ -1,0 +1,55 @@
+#!/bin/bash
+#
+# Checks pending commits for incorrectly formatted source files and optionally formats them.
+# Depends on clang-format (as an environment variable)
+# and a .clang-format configuration file (in the root directory of the repo).
+# Called by "git commit".
+# Note: A non-zero exit status cancels the pending commit.
+
+# The following line can be modified for use with other languages that clang format supports
+source_files="*.hpp *.h *.cpp *.cc *.cxx"
+
+modified_sources=$(git diff --staged --name-only --diff-filter=d HEAD -- $source_files)
+
+for f in $modified_sources; do
+    if [ "$(clang-format $f -style=file)" != "$(<$f)" ]; then
+        unformatted_sources="$unformatted_sources $f"
+    fi
+done
+
+if [ -z $unformatted_sources ]; then
+    exit 0
+fi
+
+echo "The following staged files are not formatted according to .clang-format:"
+for f in $unformatted_sources; do
+    echo "    $f"
+done
+
+exec < /dev/tty  # assigns stdin to the terminal and allows us to read user input below
+
+while [ true ]; do
+    echo "1. Show diff   2. Format & commit   3. Ignore & commit   4. Cancel"
+    echo -n "> "
+    read answer
+
+    if [ "$answer" == "1" ]; then
+        for f in $unformatted_sources; do
+            echo "---------"
+            echo "$f"
+            echo "---------"
+            diff "$f" <(clang-format $f -style=file)
+        done
+    elif [ "$answer" == "2" ]; then 
+        echo -n "Formatting... "
+        clang-format -i -style=file $modified_sources
+        echo "Done!"
+        git add $modified_sources
+        exit 0
+    elif [ "$answer" == "3" ]; then 
+        exit 0
+    else # answer == 4
+        echo "Commit cancelled."
+        exit 1
+    fi
+done
